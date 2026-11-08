@@ -10,9 +10,5 @@ MAX_BOT_TOKEN = os.getenv("MAX_BOT_TOKEN", "").strip()
 # Базовый API URL для мессенджера MAX
 API_BASE = os.getenv("MAX_API_BASE", "https://platform-api2.max.ru")
 
-# Префикс ID для базы данных
-# Telegram: 1..69_999_999_999
-# VK: 70_000_000_000 + vk_id
-# Discord: 80_000_000_000 + dc_id
-# MAX: 90_000_000_000 + max_id
-MAX_UID_OFFSET = 90_000_000_000
+# Изолированная база данных мессенджера MAX (moxxi_max.db)
+MAX_UID_OFFSET = 0

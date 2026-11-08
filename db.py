@@ -15,7 +15,7 @@ _curr_dir = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(_curr_dir, ".env"))
 load_dotenv()
 
-DB_PATH = os.getenv("DB_PATH", "C:/Users/eiema/OneDrive/Desktop/бот2.0/data/iris.db")
+DB_PATH = os.getenv("DB_PATH") or os.path.join(_curr_dir, "data", "moxxi_max.db")
 
 _conn: Optional[aiosqlite.Connection] = None
 

@@ -93,14 +93,14 @@ class MaxBotClient:
             log.error("Исключение при send_message в MAX: %s", e)
             return False
 
-    async def answer_callback(self, callback_id: str) -> bool:
+    async def answer_callback(self, callback_id: str, notification: str = "✨ Запрос принят") -> bool:
         """Подтверждение нажатия кнопки в MAX для снятия загрузки с интерфейса"""
         if not callback_id:
             return False
         url = f"{self.base_url}/answers"
         try:
             async with httpx.AsyncClient(verify=ssl_context, timeout=10.0) as client:
-                resp = await client.post(url, headers=self.headers, params={"callback_id": callback_id}, json={})
+                resp = await client.post(url, headers=self.headers, params={"callback_id": callback_id}, json={"notification": notification})
                 return resp.status_code == 200
         except Exception as e:
             log.warning("answer_callback error: %s", e)
@@ -156,7 +156,10 @@ def get_main_keyboard_max():
             {"type": "callback", "text": "🐉 Босс", "payload": "босс"}
         ],
         [
-            {"type": "callback", "text": "🏆 Топ богачей", "payload": "топ"},
+            {"type": "link", "text": "➕ Добавить в группу", "url": "https://max.ru/se14948893_bot"},
+            {"type": "callback", "text": "🏆 Топ", "payload": "топ"}
+        ],
+        [
             {"type": "callback", "text": "📖 Все команды", "payload": "команды"}
         ]
     ]
@@ -180,6 +183,26 @@ async def handle_message(bot: MaxBotClient, chat_id: int | str, user_id: int, us
     args = clean_txt[len(p[0]):].strip() if p else ""
 
     log.info("MAX действие от [%s|%d]: cmd='%s', args='%s'", user_name, user_id, cmd, args)
+
+    # ═══════════════════════════════════════════════════════════
+    # ➕ ДОБАВИТЬ В ГРУППУ / БЕСЕДУ
+    # ═══════════════════════════════════════════════════════════
+    if cmd in ("добавить", "группа", "группу", "беседа", "беседу", "пригласить", "invite", "инвайт") or (cmd == "в" and args in ("группу", "беседу", "чат")):
+        msg = (
+            f"🌟 КАК ДОБАВИТЬ MOXXI 3.0 В СВОЮ ГРУППУ / БЕСЕДУ MAX:\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"1. Нажмите на кнопку «➕ Добавить бота в группу» ниже\n"
+            f"2. Либо откройте профиль бота @se14948893_bot и выберите «Добавить в беседу»\n"
+            f"3. Выберите нужную группу и выдайте боту права администратора!\n\n"
+            f"🎮 В беседах доступны: рейдовые боссы, дуэли, кланы, казино и общие рейтинги!\n"
+            f"💡 После добавления напишите в группе «старт» или «команды»."
+        )
+        buttons = [
+            [{"type": "link", "text": "➕ Добавить бота в группу", "url": "https://max.ru/se14948893_bot"}],
+            [{"type": "callback", "text": "📖 Все команды", "payload": "команды"}]
+        ]
+        await bot.send_message(chat_id, msg, buttons=buttons)
+        return
 
     # ═══════════════════════════════════════════════════════════
     # 0. МИНИ-ПРИЛОЖЕНИЕ (WEB APP)
