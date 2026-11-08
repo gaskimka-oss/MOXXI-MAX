@@ -98,6 +98,9 @@ def get_main_keyboard_max():
     """Инлайн-кнопки для быстрого управления в MAX"""
     return [
         [
+            {"type": "link", "text": "🎮 Играть в Mini App", "url": "https://gaskimka-oss.github.io/MOXXI/"}
+        ],
+        [
             {"type": "callback", "text": "👑 Профиль", "payload": "профиль"},
             {"type": "callback", "text": "🎁 Бонус", "payload": "бонус"}
         ],
@@ -132,6 +135,25 @@ async def handle_message(bot: MaxBotClient, chat_id: int | str, user_id: int, us
     args = clean_txt[len(cmd):].strip()
 
     log.info("MAX команда от [%s|%d]: cmd='%s', args='%s'", user_name, user_id, cmd, args)
+
+    # 0. МИНИ-ПРИЛОЖЕНИЕ (WEB APP)
+    if cmd in ("приложение", "апп", "app", "веб", "кликер", "мини"):
+        msg = (
+            f"🎮 ОФИЦИАЛЬНОЕ МИНИ-ПРИЛОЖЕНИЕ MOXXI 🎮\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"Открывайте полноценную интерактивную игру MOXXI прямо внутри MAX!\n\n"
+            f"🔥 В приложении вас ждут:\n"
+            f"• 💎 Увлекательный кликер и майнинг\n"
+            f"• 🎰 Интерактивное казино и рулетка\n"
+            f"• 🎒 Инвентарь и прокачка персонажа\n"
+            f"• 💰 Единый баланс с ботом в чате\n\n"
+            f"👇 Нажмите кнопку ниже, чтобы запустить приложение:"
+        )
+        buttons = [
+            [{"type": "link", "text": "🎮 Запустить Mini App", "url": "https://gaskimka-oss.github.io/MOXXI/"}]
+        ]
+        await bot.send_message(chat_id, msg, buttons=buttons)
+        return
 
     # 1. СТАРТ / ПОМОЩЬ / МЕНЮ
     if cmd in ("/start", "старт", "начать", "меню", "помощь", "хелп", "команды", "страт", "играть", "игры", "игра", "play"):
