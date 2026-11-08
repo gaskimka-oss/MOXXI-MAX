@@ -1,5 +1,5 @@
 """Слой базы данных для VK-бота MOXXI 3.0 (moxxivk).
-Подключается к единой базе данных SQLite (iris.db).
+Подключается к единой базе данных SQLite (moxxi_max.db).
 Поддерживает: экономику, банк с процентами, кражи/тюрьму, подарки, кейсы,
 ранги (1-10), дуэли, шипперинг, кланы, браки, детей, боссов, бизнесы, автопарк, питомцев.
 """
@@ -900,3 +900,213 @@ async def finish_vk_auction(auction_id: int) -> dict | None:
         await add_xp(lot["seller_id"], 50)
         await add_xp(lot["leader_id"], 75)
     return lot
+
+
+# ═══════════════════════════════════════════════════════════════
+# 🚗 АВТОСАЛОН И АВТОПАРК (USER_CARS)
+# ═══════════════════════════════════════════════════════════════
+
+async def buy_user_car(user_id: int, car_key: str) -> tuple[bool, str]:
+    car = CAR_CATALOG.get(car_key)
+    if not car:
+        return False, "Такой автомобиль не найден в автосалоне!"
+    u = await get_user(user_id) or {}
+    bal = u.get("balance", 0)
+    cost = car["cost"]
+    if bal < cost:
+        return False, f"Недостаточно средств! Нужно `{cost:,}` 🌑 (у вас `{bal:,}` 🌑)."
+    now = int(time.time())
+    await add_balance(user_id, -cost)
+    await conn().execute(
+        "INSERT INTO user_cars (user_id, car_key, bought_at, is_active) VALUES (?, ?, ?, 1)",
+        (user_id, car_key, now)
+    )
+    await conn().commit()
+    return True, f"🎉 Поздравляем с покупкой **{car['name']}** за `{cost:,}` 🌑 монет! Машина отправлена в ваш `/гараж`."
+
+# ═══════════════════════════════════════════════════════════════
+# 📈 КРИПТОВАЛЮТНАЯ БИРЖА (CHAT_CRYPTO & USER_CRYPTO)
+# ═══════════════════════════════════════════════════════════════
+
+async def get_crypto_rate() -> tuple[float, float, int]:
+    now = int(time.time())
+    async with conn().execute("SELECT rate, last_update FROM chat_crypto LIMIT 1") as cur:
+        row = await cur.fetchone()
+    if not row:
+        init_rate = 150.0
+        await conn().execute("INSERT INTO chat_crypto (rate, last_update) VALUES (?, ?)", (init_rate, now))
+        await conn().commit()
+        return init_rate, 0.0, now
+
+    old_rate = row["rate"]
+    last_up = row["last_update"]
+    diff = now - last_up
+    if diff >= 180:
+        factor = 1.0 + random.uniform(-0.07, 0.09)
+        new_rate = round(max(10.0, min(10000.0, old_rate * factor)), 2)
+        await conn().execute("UPDATE chat_crypto SET rate = ?, last_update = ?", (new_rate, now))
+        await conn().commit()
+        change = round(((new_rate - old_rate) / old_rate) * 100, 1)
+        return new_rate, change, now
+    return old_rate, 0.0, last_up
+
+async def get_user_crypto(user_id: int) -> float:
+    async with conn().execute("SELECT amount FROM user_crypto WHERE user_id = ?", (user_id,)) as cur:
+        row = await cur.fetchone()
+        return round(row["amount"], 4) if row else 0.0
+
+async def buy_crypto(user_id: int, amount: float) -> tuple[bool, str]:
+    if amount <= 0:
+        return False, "Укажите количество больше 0!"
+    rate, _, _ = await get_crypto_rate()
+    cost = int(amount * rate)
+    u = await get_user(user_id) or {}
+    bal = u.get("balance", 0)
+    if bal < cost:
+        return False, f"Недостаточно монет! Требуется `{cost:,}` 🌑 (у вас `{bal:,}` 🌑)."
+    await add_balance(user_id, -cost)
+    await conn().execute(
+        """INSERT INTO user_crypto (user_id, amount) VALUES (?, ?)
+           ON CONFLICT(user_id) DO UPDATE SET amount = amount + excluded.amount""",
+        (user_id, amount)
+    )
+    await conn().commit()
+    return True, f"✅ Вы успешно приобрели **{amount:.4f} MOX** за `{cost:,}` 🌑 монет по курсу `{rate:,.2f}` 🌑!"
+
+async def sell_crypto(user_id: int, amount: float) -> tuple[bool, str]:
+    if amount <= 0:
+        return False, "Укажите количество больше 0!"
+    cur_mox = await get_user_crypto(user_id)
+    if cur_mox < amount:
+        return False, f"Недостаточно криптовалюты! У вас только **{cur_mox:.4f} MOX**."
+    rate, _, _ = await get_crypto_rate()
+    revenue = int(amount * rate)
+    await conn().execute("UPDATE user_crypto SET amount = amount - ? WHERE user_id = ?", (amount, user_id))
+    await add_balance(user_id, revenue)
+    await conn().commit()
+    return True, f"💰 Вы успешно продали **{amount:.4f} MOX** и получили `+{revenue:,}` 🌑 монет!"
+
+# ═══════════════════════════════════════════════════════════════
+# 🐾 ПИТОМЦЫ: ЭКСПЕДИЦИИ (USER_PETS)
+# ═══════════════════════════════════════════════════════════════
+
+async def send_pet_expedition(user_id: int, duration_sec: int = 1800) -> tuple[bool, str]:
+    pet = await get_user_pet(user_id)
+    if not pet:
+        return False, "У вас ещё нет питомца! Заведите его: `/приручить`."
+    now = int(time.time())
+    if (pet.get("expedition_until") or 0) > now:
+        left = pet["expedition_until"] - now
+        return False, f"Питомец уже находится в экспедиции! Возврат через **{left // 60} мин. {left % 60} сек.**"
+    if (pet.get("hunger") or 0) < 20:
+        return False, "Питомец слишком голоден! Сначала покормите его: `/покормить`."
+    until = now + duration_sec
+    await conn().execute(
+        "UPDATE user_pets SET expedition_until = ? WHERE user_id = ?",
+        (until, user_id)
+    )
+    await conn().commit()
+    return True, f"🧭 Ваш питомец **{pet['pet_name']}** отправился в опасную экспедицию за сокровищами на **30 минут**!"
+
+async def claim_pet_expedition(user_id: int) -> tuple[bool, str]:
+    pet = await get_user_pet(user_id)
+    if not pet:
+        return False, "У вас нет питомца!"
+    now = int(time.time())
+    until = pet.get("expedition_until") or 0
+    if until == 0:
+        return False, "Питомец сейчас дома, а не в походе. Отправьте его: `/экспедиция`!"
+    if until > now:
+        left = until - now
+        return False, f"Питомец ещё в пути! Ждите ещё **{left // 60} мин. {left % 60} сек.**"
+
+    lvl = pet.get("level", 1) or 1
+    coins = random.randint(1800, 4200) * lvl
+    xp = 60 * lvl
+    new_hunger = max(10, (pet.get("hunger", 100) or 100) - 25)
+    await conn().execute(
+        "UPDATE user_pets SET expedition_until = 0, xp = xp + ?, hunger = ? WHERE user_id = ?",
+        (xp, new_hunger, user_id)
+    )
+    await add_balance(user_id, coins)
+    await add_user_xp(user_id, xp)
+    await conn().commit()
+    return True, f"🎉 Питомец вернулся из экспедиции с сокровищами! Награда: `+{coins:,}` 🌑 монет и `+{xp}` XP!"
+
+# ═══════════════════════════════════════════════════════════════
+# 📜 ЕЖЕДНЕВНЫЕ КВЕСТЫ (USER_DAILY_QUESTS)
+# ═══════════════════════════════════════════════════════════════
+
+async def get_or_create_daily_quests(user_id: int) -> list[dict]:
+    today = datetime.datetime.now().strftime("%Y-%m-%d")
+    async with conn().execute(
+        "SELECT * FROM user_daily_quests WHERE user_id = ? AND day = ?",
+        (user_id, today)
+    ) as cur:
+        rows = await cur.fetchall()
+        if rows:
+            return [dict(r) for r in rows]
+
+    templates = [
+        ("work", "💼 Отработать смену на работе", 1, 1500, 100),
+        ("mine", "⛏ Найти ресурсы в шахте", 2, 2000, 150),
+        ("feed", "🍖 Покормить своего питомца", 1, 1200, 80),
+        ("slots", "🎰 Испытать удачу в играх", 2, 2500, 200),
+    ]
+    selected = random.sample(templates, 3)
+    for q_id, title, target, r_coins, r_xp in selected:
+        await conn().execute(
+            """INSERT INTO user_daily_quests (user_id, day, quest_id, quest_title, target_count, current_count, reward_coins, reward_xp, completed, claimed)
+               VALUES (?, ?, ?, ?, ?, 0, ?, ?, 0, 0)""",
+            (user_id, today, q_id, title, target, r_coins, r_xp)
+        )
+    await conn().commit()
+
+    async with conn().execute(
+        "SELECT * FROM user_daily_quests WHERE user_id = ? AND day = ?",
+        (user_id, today)
+    ) as cur:
+        rows = await cur.fetchall()
+        return [dict(r) for r in rows]
+
+async def claim_quest_reward(user_id: int, quest_id: str) -> tuple[bool, str]:
+    today = datetime.datetime.now().strftime("%Y-%m-%d")
+    async with conn().execute(
+        "SELECT * FROM user_daily_quests WHERE user_id = ? AND day = ? AND quest_id = ?",
+        (user_id, today, quest_id)
+    ) as cur:
+        row = await cur.fetchone()
+    if not row:
+        return False, "Квест не найден!"
+    if not row["completed"]:
+        return False, "Квест ещё не завершён!"
+    if row["claimed"]:
+        return False, "Вы уже забрали награду за этот квест!"
+
+    await conn().execute(
+        "UPDATE user_daily_quests SET claimed = 1 WHERE user_id = ? AND day = ? AND quest_id = ?",
+        (user_id, today, quest_id)
+    )
+    coins = row["reward_coins"]
+    xp = row["reward_xp"]
+    await add_balance(user_id, coins)
+    await add_user_xp(user_id, xp)
+    await conn().commit()
+    return True, f"🎉 Награда получена: `+{coins:,}` 🌑 монет и `+{xp}` XP!"
+
+async def progress_daily_quest(user_id: int, quest_id: str, count: int = 1) -> None:
+    today = datetime.datetime.now().strftime("%Y-%m-%d")
+    async with conn().execute(
+        "SELECT current_count, target_count, completed FROM user_daily_quests WHERE user_id = ? AND day = ? AND quest_id = ?",
+        (user_id, today, quest_id)
+    ) as cur:
+        row = await cur.fetchone()
+    if not row or row["completed"]:
+        return
+    new_c = min(row["target_count"], row["current_count"] + count)
+    is_done = 1 if new_c >= row["target_count"] else 0
+    await conn().execute(
+        "UPDATE user_daily_quests SET current_count = ?, completed = ? WHERE user_id = ? AND day = ? AND quest_id = ?",
+        (new_c, is_done, user_id, today, quest_id)
+    )
+    await conn().commit()
