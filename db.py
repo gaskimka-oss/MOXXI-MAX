@@ -70,6 +70,13 @@ async def init() -> None:
             )
         """)
         await _conn.execute("""
+            CREATE TABLE IF NOT EXISTS max_chats (
+                chat_id TEXT PRIMARY KEY,
+                title TEXT DEFAULT '',
+                last_broadcast_ts INTEGER DEFAULT 0
+            )
+        """)
+        await _conn.execute("""
             CREATE TABLE IF NOT EXISTS vk_auctions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 chat_id INTEGER NOT NULL,
@@ -1109,4 +1116,28 @@ async def progress_daily_quest(user_id: int, quest_id: str, count: int = 1) -> N
         "UPDATE user_daily_quests SET current_count = ?, completed = ? WHERE user_id = ? AND day = ? AND quest_id = ?",
         (new_c, is_done, user_id, today, quest_id)
     )
+    await conn().commit()
+
+
+# ── Чаты MAX и рассылки ────────────────────────────────────────────────
+
+async def record_chat_activity(chat_id: str | int, title: str = "") -> None:
+    c_str = str(chat_id)
+    await conn().execute(
+        """INSERT INTO max_chats (chat_id, title)
+           VALUES (?, ?)
+           ON CONFLICT(chat_id) DO UPDATE SET
+               title = CASE WHEN excluded.title != '' THEN excluded.title ELSE max_chats.title END""",
+        (c_str, title)
+    )
+    await conn().commit()
+
+async def get_all_max_chats() -> list[dict]:
+    async with conn().execute("SELECT chat_id, title, last_broadcast_ts FROM max_chats") as cur:
+        rows = await cur.fetchall()
+        return [dict(r) for r in rows]
+
+async def update_max_chat_broadcast_ts(chat_id: str | int, ts: int) -> None:
+    c_str = str(chat_id)
+    await conn().execute("UPDATE max_chats SET last_broadcast_ts = ? WHERE chat_id = ?", (ts, c_str))
     await conn().commit()

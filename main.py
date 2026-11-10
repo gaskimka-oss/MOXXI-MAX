@@ -165,6 +165,83 @@ def get_main_keyboard_max():
     ]
 
 
+
+# ═══════════════════════════════════════════════════════════════
+# 🌉 ОМНИКАНАЛЬНЫЙ МОСТ В TELEGRAM И DISCORD
+# ═══════════════════════════════════════════════════════════════
+TG_BOT_TOKEN = os.getenv("TG_BOT_TOKEN", "").strip() or "8545937596:AAF0PuDMmgdu4fbUJpJbwJeTSLByPWive4w"
+TG_OWNERS = [8036974481, 8412527198]
+
+DISCORD_TOKEN = os.getenv("DISCORD_BOT_TOKEN", "").strip()
+if not DISCORD_TOKEN:
+    for p in [r"C:\Users\eiema\OneDrive\Desktop\MOXXI Support\.env", r"C:\Users\eiema\OneDrive\Desktop\moxxidc\.env"]:
+        if os.path.exists(p):
+            try:
+                with open(p, "r", encoding="utf-8", errors="ignore") as fl:
+                    for l in fl:
+                        if l.startswith("DISCORD_BOT_TOKEN="):
+                            DISCORD_TOKEN = l.split("=", 1)[1].strip()
+                            break
+            except Exception:
+                pass
+
+
+async def notify_telegram_about_ticket_max(user_id: int, user_name: str, question: str, category: str = "Общее"):
+    if not TG_BOT_TOKEN:
+        return
+    admin_text = (
+        f"🆘 🔔 <b>НОВОЕ ОБРАЩЕНИЕ ИЗ MAX MESSENGER</b>\n"
+        f"🌐 <b>Платформа:</b> ⚡️ MAX\n"
+        f"📂 <b>Категория:</b> {html.escape(category)}\n"
+        f"┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈\n"
+        f"👤 <b>Пользователь:</b> {html.escape(user_name)}\n"
+        f"🆔 <b>MAX ID:</b> <code>{user_id}</code>\n\n"
+        f"📝 <b>Вопрос / Суть:</b>\n«{html.escape(question)}»"
+    )
+    url = f"https://api.telegram.org/bot{TG_BOT_TOKEN}/sendMessage"
+    async with httpx.AsyncClient(timeout=5) as client:
+        for rid in TG_OWNERS:
+            try:
+                payload = {"chat_id": rid, "text": admin_text, "parse_mode": "HTML"}
+                await client.post(url, json=payload)
+            except Exception as e:
+                log.warning("Ошибка отправки MAX тикета в TG: %s", e)
+
+
+async def notify_discord_about_ticket_max(user_id: int, user_name: str, question: str, category: str = "Общее"):
+    if not DISCORD_TOKEN:
+        return
+    queue_ch_id = 1569227215160221797
+    payload = {
+        "embeds": [
+            {
+                "title": f"🎫 ОБРАЩЕНИЕ ИЗ MAX • [{category}]",
+                "description": (
+                    f"👤 **Пользователь:** `{user_name}` (MAX ID: `{user_id}`)\n"
+                    f"📱 **Платформа:** `⚡️ MAX Messenger`\n"
+                    f"📂 **Категория:** `{category}`\n"
+                    f"⏱ **Время:** <t:{int(time.time())}:R>\n\n"
+                    f"───────────────────────────────\n"
+                    f"📝 **Вопрос / Суть обращения:**\n{question[:1500]}\n"
+                    f"───────────────────────────────"
+                ),
+                "color": 15844367,
+                "footer": {"text": "MOXXI Omnichannel Desk • MAX ⇄ Discord"}
+            }
+        ]
+    }
+    url = f"https://discord.com/api/v10/channels/{queue_ch_id}/messages"
+    headers = {
+        "Authorization": f"Bot {DISCORD_TOKEN}",
+        "Content-Type": "application/json"
+    }
+    async with httpx.AsyncClient(timeout=5) as client:
+        try:
+            await client.post(url, json=payload, headers=headers)
+        except Exception as e:
+            log.warning("Ошибка отправки MAX тикета в Discord: %s", e)
+
+
 async def handle_message(bot: MaxBotClient, chat_id: int | str, user_id: int, user_name: str, raw_text: str):
     clean_txt = raw_text.strip()
     if not clean_txt:
@@ -176,6 +253,11 @@ async def handle_message(bot: MaxBotClient, chat_id: int | str, user_id: int, us
 
     # Инициализация пользователя в единой БД
     await db.ensure_user(db_uid, username=f"max_{user_id}", first_name=user_name)
+    # Запись активности чата
+    try:
+        await db.record_chat_activity(chat_id)
+    except Exception:
+        pass
     u_data = await db.get_user(db_uid) or {}
 
     p = clean_txt.split()
@@ -581,6 +663,42 @@ async def handle_message(bot: MaxBotClient, chat_id: int | str, user_id: int, us
     # ═══════════════════════════════════════════════════════════
     # 10. ВСЕ 12 РАЗДЕЛОВ КОМАНД
     # ═══════════════════════════════════════════════════════════
+    # ═══════════════════════════════════════════════════════════
+    # 🆘 СЛУЖБА ПОДДЕРЖКИ, РЕПОРТЫ И ИДЕИ
+    # ═══════════════════════════════════════════════════════════
+    elif cmd in ("поддержка", "тикет", "ticket", "баг", "ошибка", "репорт", "жалоба", "идея", "предложение"):
+        if not args:
+            await bot.send_message(
+                chat_id,
+                "🆘 Служба заботы и поддержки MOXXI (MAX):\n\n"
+                "• Чтобы сообщить о проблеме или баге:\n"
+                "  👉 Напишите: «поддержка [описание]» или «баг [описание]»\n\n"
+                "• Чтобы предложить крутую идею или улучшение:\n"
+                "  👉 Напишите: «идея [текст идеи]»\n\n"
+                "• Discord Сервер: https://discord.gg/7hDq4R2q\n"
+                "• Telegram Чат: https://t.me/moxxi_chat",
+                buttons=get_main_keyboard_max()
+            )
+            return
+
+        is_idea = cmd in ("идея", "предложение")
+        is_bug = cmd in ("баг", "ошибка", "репорт", "жалоба")
+        cat = "💡 Идея / Предложение" if is_idea else ("🛠 Баг / Ошибка" if is_bug else "Общее")
+
+        asyncio.create_task(notify_telegram_about_ticket_max(user_id, user_name, args, category=cat))
+        asyncio.create_task(notify_discord_about_ticket_max(user_id, user_name, args, category=cat))
+
+        icon = "💡" if is_idea else ("🛠" if is_bug else "🆘")
+        label = "Идея" if is_idea else ("Багрепорт" if is_bug else "Тикет")
+        await bot.send_message(
+            chat_id,
+            f"{icon} {label} успешно отправлен администрации!\n\n"
+            f"📝 Обращение передано дежурной администрации в Telegram и Discord.\n"
+            f"Спасибо за ваш вклад в развитие MOXXI! ❤️",
+            buttons=get_main_keyboard_max()
+        )
+        return
+
     elif cmd in ("команды", "каталог", "раздел", "разделы"):
         await bot.send_message(chat_id, commands_catalog.get_hub_text(), buttons=get_main_keyboard_max())
         return
@@ -589,12 +707,56 @@ async def handle_message(bot: MaxBotClient, chat_id: int | str, user_id: int, us
     await bot.send_message(chat_id, f"🤖 Команда не распознана. Нажмите на кнопки меню или напишите «команды»!", buttons=get_main_keyboard_max())
 
 
+
+async def max_support_broadcast_loop(bot: MaxBotClient):
+    """Фоновая рассылка каждые 3 часа во все активные чаты MAX."""
+    log.info("Запущен воркер автосообщений техподдержки и идей MAX (интервал: 3 часа)...")
+    await asyncio.sleep(60)
+    while True:
+        try:
+            now = int(time.time())
+            interval = 3 * 3600  # 3 часа = 10800 секунд
+            chats = await db.get_all_max_chats()
+
+            broadcast_text = (
+                "💜✨ СЛУЖБА ЗАБОТЫ И ПОДДЕРЖКИ MOXXI ✨💜\n"
+                "──────────────────────────────────\n"
+                "Нашли баг, ошибку или хотите предложить крутую идею для обновления?\n"
+                "Мы всегда на связи и ценим каждого игрока нашего сообщества!\n\n"
+                "📝 Как обратиться к разработчикам и администрации:\n"
+                "• 🆘 Сообщить о баге или проблеме:\n"
+                "  👉 Напишите в чат: «поддержка [описание]» или «баг [описание]»\n\n"
+                "• 💡 Предложить новую идею или фичу:\n"
+                "  👉 Напишите в чат: «идея [текст идеи]»\n\n"
+                "🌐 Официальные каналы связи:\n"
+                "• 🎮 Discord Сервер Поддержки: https://discord.gg/7hDq4R2q\n"
+                "• ✈️ Telegram Чат Игроков: https://t.me/moxxi_chat\n\n"
+                "⚡️ Все ваши обращения мгновенно отправляются дежурной команде модераторов в Telegram и Discord! ❤️"
+            )
+
+            for ch in chats:
+                cid = ch["chat_id"]
+                last_ts = ch.get("last_broadcast_ts") or 0
+                if (now - last_ts) >= interval:
+                    try:
+                        await bot.send_message(cid, broadcast_text, buttons=get_main_keyboard_max())
+                        await db.update_max_chat_broadcast_ts(cid, now)
+                        await asyncio.sleep(1.0)
+                    except Exception as e:
+                        log.debug("Ошибка авторассылки в чат MAX %s: %s", cid, e)
+
+        except Exception as e:
+            log.warning("Исключение в max_support_broadcast_loop: %s", e)
+        await asyncio.sleep(60)
+
+
 async def run_bot():
     token = config.MAX_BOT_TOKEN
     log.info("Запуск бота MOXXI MAX...")
     await db.init()
     bot = MaxBotClient(token)
     log.info("Подключение к платформе MAX успешно! Начало Long Polling...")
+    asyncio.create_task(max_support_broadcast_loop(bot))
 
     while True:
         try:
