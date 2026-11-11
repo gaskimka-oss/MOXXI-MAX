@@ -199,10 +199,36 @@ async def notify_telegram_about_ticket_max(user_id: int, user_name: str, questio
         f"📝 <b>Вопрос / Суть:</b>\n«{html.escape(question)}»"
     )
     url = f"https://api.telegram.org/bot{TG_BOT_TOKEN}/sendMessage"
-    async with httpx.AsyncClient(timeout=5) as client:
+
+    hq_chat_id = None
+    log_topic_id = None
+    try:
+        iris_db_path = os.path.join(os.path.dirname(_curr_dir), "бот2.0", "data", "iris.db")
+        if os.path.exists(iris_db_path):
+            import aiosqlite
+            async with aiosqlite.connect(iris_db_path) as idb:
+                async with idb.execute("SELECT key, value FROM staff_hq_settings WHERE key IN ('staff_hq_chat_id', 'staff_log_topic_id')") as cur:
+                    for k, v in await cur.fetchall():
+                        if k == 'staff_hq_chat_id' and v:
+                            hq_chat_id = int(v)
+                        elif k == 'staff_log_topic_id' and v:
+                            log_topic_id = int(v)
+    except Exception:
+        pass
+
+    targets = []
+    if hq_chat_id:
+        targets.append((hq_chat_id, log_topic_id))
+    else:
         for rid in TG_OWNERS:
+            targets.append((rid, None))
+
+    async with httpx.AsyncClient(timeout=5) as client:
+        for cid, tid in targets:
             try:
-                payload = {"chat_id": rid, "text": admin_text, "parse_mode": "HTML"}
+                payload = {"chat_id": cid, "text": admin_text, "parse_mode": "HTML"}
+                if tid:
+                    payload["message_thread_id"] = tid
                 await client.post(url, json=payload)
             except Exception as e:
                 log.warning("Ошибка отправки MAX тикета в TG: %s", e)
@@ -227,6 +253,20 @@ async def notify_discord_about_ticket_max(user_id: int, user_name: str, question
                 ),
                 "color": 15844367,
                 "footer": {"text": "MOXXI Omnichannel Desk • MAX ⇄ Discord"}
+            }
+        ],
+        "components": [
+            {
+                "type": 1,
+                "components": [
+                    {
+                        "type": 2,
+                        "style": 3,
+                        "label": "✋ Взять тикет",
+                        "custom_id": f"st_omni_claim_max:{user_id}",
+                        "emoji": {"name": "💬"}
+                    }
+                ]
             }
         ]
     }
@@ -709,13 +749,13 @@ async def handle_message(bot: MaxBotClient, chat_id: int | str, user_id: int, us
 
 
 async def max_support_broadcast_loop(bot: MaxBotClient):
-    """Фоновая рассылка каждые 3 часа во все активные чаты MAX."""
-    log.info("Запущен воркер автосообщений техподдержки и идей MAX (интервал: 3 часа)...")
+    """Фоновая рассылка каждые 8 часов во все активные чаты MAX."""
+    log.info("Запущен воркер автосообщений техподдержки и идей MAX (интервал: 8 часов)...")
     await asyncio.sleep(60)
     while True:
         try:
             now = int(time.time())
-            interval = 3 * 3600  # 3 часа = 10800 секунд
+            interval = 8 * 3600  # 8 часов = 28800 секунд
             chats = await db.get_all_max_chats()
 
             broadcast_text = (
