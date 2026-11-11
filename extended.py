@@ -872,7 +872,7 @@ async def handle_extended_command(
         await message.answer("\n".join(lines))
         return True
 
-    if cmd in ("созвать", "все", "общий_сбор"):
+    if cmd in ("созвать", "общий_сбор"):
         if not is_chat:
             return await message.answer("❌ Созыв доступен только в беседах!")
         if my_rank < 3:

@@ -640,6 +640,42 @@ async def handle_message(bot: MaxBotClient, chat_id: int | str, user_id: int, us
         return
 
     # ═══════════════════════════════════════════════════════════
+    # 7.1. РАБОТА И СМЕНА
+    # ═══════════════════════════════════════════════════════════
+    elif cmd in ("работа", "работать", "работы", "смена", "профессия", "вакансии"):
+        now = int(time.time())
+        cd_key = "job_shift_cd"
+        cd_left = await db.cooldown_left(db_uid, cd_key, 3600)
+        if cd_left > 0:
+            m = cd_left // 60
+            s = cd_left % 60
+            await bot.send_message(chat_id, f"⏳ Вы уже отработали смену! Отдохните ещё {m} мин {s} сек.", buttons=get_main_keyboard_max())
+            return
+        await db.set_cooldown(db_uid, cd_key, 3600)
+        jobs = [
+            ("Курьер", 1500, 2500),
+            ("Бариста", 2000, 3500),
+            ("Таксист", 2500, 4500),
+            ("IT-Разработчик", 4000, 7000),
+            ("Инвестор", 6000, 10000)
+        ]
+        job_title, min_p, max_p = random.choice(jobs)
+        salary = random.randint(min_p, max_p)
+        await db.add_balance(db_uid, salary)
+        await db.add_xp(db_uid, 45)
+        await bot.send_message(
+            chat_id,
+            f"💼 ВЫ ОТРАБОТАЛИ СМЕНУ!\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"👔 Профессия: {job_title}\n"
+            f"💰 Заработано: +{salary:,} 🌑 монет\n"
+            f"⭐ Опыт: +45 XP\n\n"
+            f"Следующая смена доступна через 1 час!",
+            buttons=get_main_keyboard_max()
+        )
+        return
+
+    # ═══════════════════════════════════════════════════════════
     # 8. РЕЙДОВЫЙ БОСС
     # ═══════════════════════════════════════════════════════════
     elif cmd in ("босс", "рейд"):

@@ -1274,7 +1274,62 @@ async def init() -> None:
                 created_at INTEGER NOT NULL
             )
         """)
+        # Автоматические миграции и добавление колонок для расширенных систем
+        migrations = [
+            ("user_jobs", "job_id", "TEXT DEFAULT 'courier'"),
+            ("user_jobs", "level", "INTEGER DEFAULT 1"),
+            ("user_jobs", "last_work_ts", "INTEGER DEFAULT 0"),
+            ("user_jobs", "shift_count", "INTEGER DEFAULT 0"),
+            ("user_inventory", "quantity", "INTEGER DEFAULT 1"),
+            ("user_titles", "title", "TEXT DEFAULT ''"),
+            ("clans", "treasury", "INTEGER DEFAULT 0"),
+            ("clan_members", "rank", "INTEGER DEFAULT 1"),
+            ("users", "reputation", "INTEGER DEFAULT 0"),
+        ]
+        for tbl, col, col_def in migrations:
+            try:
+                await _conn.execute(f"ALTER TABLE {tbl} ADD COLUMN {col} {col_def}")
+            except Exception:
+                pass
+
+        await _conn.execute("""
+            CREATE TABLE IF NOT EXISTS chat_activity (
+                chat_id INTEGER NOT NULL,
+                user_id INTEGER NOT NULL,
+                msg_count INTEGER DEFAULT 0,
+                last_msg_ts INTEGER DEFAULT 0,
+                PRIMARY KEY (chat_id, user_id)
+            )
+        """)
+        await _conn.execute("""
+            CREATE TABLE IF NOT EXISTS marriages (
+                user_id INTEGER PRIMARY KEY,
+                partner_id INTEGER NOT NULL,
+                created_at INTEGER NOT NULL
+            )
+        """)
+        await _conn.execute("""
+            CREATE TABLE IF NOT EXISTS user_quests (
+                user_id INTEGER NOT NULL,
+                day_str TEXT NOT NULL,
+                q1_id TEXT DEFAULT 'casino_3',
+                q1_cur INTEGER DEFAULT 0,
+                q1_done INTEGER DEFAULT 0,
+                q2_id TEXT DEFAULT 'mine_2',
+                q2_cur INTEGER DEFAULT 0,
+                q2_done INTEGER DEFAULT 0,
+                q3_id TEXT DEFAULT 'bonus_1',
+                q3_cur INTEGER DEFAULT 0,
+                q3_done INTEGER DEFAULT 0,
+                PRIMARY KEY (user_id, day_str)
+            )
+        """)
+        try:
+            await _conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_user_titles_uid ON user_titles(user_id)")
+        except Exception:
+            pass
         await _conn.commit()
+
 
 async def close() -> None:
     global _conn
