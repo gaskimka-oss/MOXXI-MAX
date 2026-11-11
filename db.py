@@ -29,6 +29,15 @@ async def init() -> None:
         _conn.row_factory = aiosqlite.Row
         await _conn.execute("PRAGMA journal_mode=WAL")
         await _conn.execute("PRAGMA synchronous=NORMAL")
+        # Применяем полную схему базы данных, если таблицы отсутствуют
+        schema_file = os.path.join(_curr_dir, "schema.sql")
+        if os.path.isfile(schema_file):
+            try:
+                with open(schema_file, "r", encoding="utf-8") as sf:
+                    await _conn.executescript(sf.read())
+            except Exception as e:
+                import logging
+                logging.getLogger("moxxi").warning("Ошибка загрузки schema.sql: %s", e)
         # Создаем недостающие таблицы
         await _conn.execute("""
             CREATE TABLE IF NOT EXISTS chat_pair_of_day (
