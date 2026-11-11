@@ -777,6 +777,66 @@ async def handle_message(bot: MaxBotClient, chat_id: int | str, user_id: int, us
         await bot.send_message(chat_id, commands_catalog.get_hub_text(), buttons=get_main_keyboard_max())
         return
 
+    elif cmd in ("промо", "промокод", "код", "promocode", "promo"):
+        p_code = args.strip().upper()
+        if not p_code:
+            await bot.send_message(
+                chat_id,
+                "🎁 АКТИВАЦИЯ ПОДАРОЧНЫХ ПРОМОКОДОВ MOXXI 3.0:\n"
+                "━━━━━━━━━━━━━━━━━━━━\n"
+                "💡 Напишите в чат: «промо [код]»\n\n"
+                "🎉 Секретный промокод на открытие: «промо ОБНОВА3.0» (+2.500.000 монет!)",
+                buttons=get_main_keyboard_max()
+            )
+            return
+
+        now_ts = int(time.time())
+        row_act = await db.fetchone(
+            "SELECT ts FROM promocode_activations WHERE code=? AND user_id=?",
+            (p_code, db_uid)
+        )
+        if row_act:
+            await bot.send_message(chat_id, f"❌ Вы уже активировали промокод «{p_code}»!", buttons=get_main_keyboard_max())
+            return
+
+        reward = 0
+        uses_left = 0
+        if p_code in ("ОБНОВА3.0", "ОБНОВА30", "OBNOVA3.0", "OBNOVA30"):
+            reward = 2500000
+            uses_left = 999999
+        else:
+            row_p = await db.fetchone("SELECT reward, uses_left FROM promocodes WHERE code=?", (p_code,))
+            if row_p:
+                reward = int(row_p["reward"])
+                uses_left = int(row_p["uses_left"])
+
+        if reward <= 0:
+            await bot.send_message(chat_id, f"❌ Промокод «{p_code}» не найден или недействителен!", buttons=get_main_keyboard_max())
+            return
+
+        if uses_left <= 0:
+            await bot.send_message(chat_id, f"❌ У промокода «{p_code}» закончились активации!", buttons=get_main_keyboard_max())
+            return
+
+        await db.add_balance(db_uid, reward)
+        await db.execute(
+            "INSERT OR REPLACE INTO promocode_activations (code, user_id, chat_id, reward, ts) VALUES (?, ?, ?, ?, ?)",
+            (p_code, db_uid, db_cid, reward, now_ts)
+        )
+        await db.execute(
+            "UPDATE promocodes SET uses_left = uses_left - 1 WHERE code=?",
+            (p_code,)
+        )
+        await bot.send_message(
+            chat_id,
+            f"🎉 ПРОМОКОД «{p_code}» УСПЕШНО АКТИВИРОВАН!\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"💰 Вам начислено: +{reward:,} монет на баланс!\n"
+            f"🎮 Приятной игры в MOXXI 3.0!",
+            buttons=get_main_keyboard_max()
+        )
+        return
+
     # Другие команды
     await bot.send_message(chat_id, f"🤖 Команда не распознана. Нажмите на кнопки меню или напишите «команды»!", buttons=get_main_keyboard_max())
 
