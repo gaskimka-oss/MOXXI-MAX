@@ -714,9 +714,7 @@ async def handle_message(bot: MaxBotClient, chat_id: int | str, user_id: int, us
                 "• Чтобы сообщить о проблеме или баге:\n"
                 "  👉 Напишите: «поддержка [описание]» или «баг [описание]»\n\n"
                 "• Чтобы предложить крутую идею или улучшение:\n"
-                "  👉 Напишите: «идея [текст идеи]»\n\n"
-                "• Discord Сервер: https://discord.gg/7hDq4R2q\n"
-                "• Telegram Чат: https://t.me/moxxi_chat",
+                "  👉 Напишите: «идея [текст идеи]»",
                 buttons=get_main_keyboard_max()
             )
             return
@@ -768,10 +766,7 @@ async def max_support_broadcast_loop(bot: MaxBotClient):
                 "  👉 Напишите в чат: «поддержка [описание]» или «баг [описание]»\n\n"
                 "• 💡 Предложить новую идею или фичу:\n"
                 "  👉 Напишите в чат: «идея [текст идеи]»\n\n"
-                "🌐 Официальные каналы связи:\n"
-                "• 🎮 Discord Сервер Поддержки: https://discord.gg/7hDq4R2q\n"
-                "• ✈️ Telegram Чат Игроков: https://t.me/moxxi_chat\n\n"
-                "⚡️ Все ваши обращения мгновенно отправляются дежурной команде модераторов в Telegram и Discord! ❤️"
+                "⚡️ Все ваши обращения мгновенно отправляются дежурной команде модераторов! ❤️"
             )
 
             for ch in chats:
