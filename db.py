@@ -22,6 +22,9 @@ _conn: Optional[aiosqlite.Connection] = None
 async def init() -> None:
     global _conn
     if _conn is None:
+        db_dir = os.path.dirname(DB_PATH)
+        if db_dir:
+            os.makedirs(db_dir, exist_ok=True)
         _conn = await aiosqlite.connect(DB_PATH)
         _conn.row_factory = aiosqlite.Row
         await _conn.execute("PRAGMA journal_mode=WAL")
